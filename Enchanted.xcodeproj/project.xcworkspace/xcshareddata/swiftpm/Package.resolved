@@ -19,6 +19,15 @@
       }
     },
     {
+      "identity" : "magnet",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/Clipy/Magnet",
+      "state" : {
+        "branch" : "master",
+        "revision" : "6ab594e9e16e2502867a4ef1ed8cc40077814c0e"
+      }
+    },
+    {
       "identity" : "networkimage",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/gonzalezreal/NetworkImage",
@@ -28,21 +37,21 @@
       }
     },
     {
-      "identity" : "swift-docc-plugin",
+      "identity" : "ollamakit",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/apple/swift-docc-plugin.git",
+      "location" : "git@github.com:AugustDev/OllamaKit.git",
       "state" : {
-        "revision" : "26ac5758409154cc448d7ab82389c520fa8a8247",
-        "version" : "1.3.0"
+        "branch" : "main",
+        "revision" : "ff201fd2f542cad507f0906d0a51a8f9c808726f"
       }
     },
     {
-      "identity" : "swift-docc-symbolkit",
+      "identity" : "sauce",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/apple/swift-docc-symbolkit",
+      "location" : "https://github.com/Clipy/Sauce",
       "state" : {
-        "revision" : "b45d1f2ed151d057b54504d653e0da5552844e34",
-        "version" : "1.0.0"
+        "revision" : "8f8fabaa8509c1a653d6c2c3c87396a4c493d876",
+        "version" : "2.4.0"
       }
     },
     {

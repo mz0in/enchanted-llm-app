@@ -8,11 +8,33 @@
 import Foundation
 import SwiftData
 
-final class SwiftDataService {
-    private var modelContext: ModelContext
+actor SwiftDataService {
+    @MainActor
+    static let shared = SwiftDataService()
+    
+    private let modelContext: ModelContext
     
     init(modelContext: ModelContext) {
         self.modelContext = modelContext
+    }
+
+    @MainActor
+    init() {
+        let sharedModelContainer: ModelContainer = {
+            let schema = Schema([
+                LanguageModelSD.self,
+                ConversationSD.self,
+                MessageSD.self,
+            ])
+            let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+            
+            do {
+                return try ModelContainer(for: schema, configurations: [modelConfiguration])
+            } catch {
+                fatalError("Could not create ModelContainer: \(error)")
+            }
+        }()
+        self.modelContext = sharedModelContainer.mainContext
     }
 }
 
@@ -31,6 +53,11 @@ extension SwiftDataService {
             modelContext.insert(model)
         }
         
+        try modelContext.saveChanges()
+    }
+    
+    func deleteModels() throws {
+        try modelContext.delete(model: LanguageModelSD.self)
         try modelContext.saveChanges()
     }
 }
@@ -68,6 +95,16 @@ extension SwiftDataService {
         let conversations = try modelContext.fetch(fetchDescriptor)
         return conversations.first
     }
+    
+    func deleteConversations() throws {
+        try modelContext.delete(model: ConversationSD.self)
+        try modelContext.saveChanges()
+    }
+    
+    func deleteConversations(_ date: Date) throws {
+        let predicate = #Predicate<ConversationSD>{ $0.createdAt >=  date && $0.createdAt <= date}
+        try modelContext.delete(model: ConversationSD.self, where: predicate)
+    }
 }
 
 
@@ -86,6 +123,16 @@ extension SwiftDataService {
     
     func createMessage(_ mesasge: MessageSD) throws {
         self.modelContext.insert(mesasge)
+        try modelContext.saveChanges()
+    }
+}
+
+// MARK: - General
+extension SwiftDataService {
+    func deleteEverything() throws {
+        try modelContext.delete(model: ConversationSD.self)
+        try modelContext.delete(model: LanguageModelSD.self)
+        try modelContext.delete(model: MessageSD.self)
         try modelContext.saveChanges()
     }
 }

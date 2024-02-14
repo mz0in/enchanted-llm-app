@@ -13,13 +13,20 @@ import SwiftUI
 
 @Observable
 final class ConversationStore {
+    static let shared = ConversationStore(swiftDataService: SwiftDataService.shared)
+    
     private var swiftDataService: SwiftDataService
     private var generation: AnyCancellable?
+    
+    /// For some reason (SwiftUI bug / too frequent UI updates) updating UI for each stream message sometimes freezes the UI.
+    /// Throttling UI updates seem to fix the issue.
+    private var currentMessageBuffer: String = ""
+    private let throttler = Throttler(delay: 0.05)
     
     var conversationState: ConversationState = .completed
     var conversations: [ConversationSD] = []
     var selectedConversation: ConversationSD?
-    var messages: [MessageSD] = []
+    @MainActor var messages: [MessageSD] = []
     
     init(swiftDataService: SwiftDataService) {
         self.swiftDataService = swiftDataService
@@ -28,30 +35,60 @@ final class ConversationStore {
     @MainActor
     func loadConversations() async throws {
         print("loading conversations")
-        conversations = try swiftDataService.fetchConversations()
+        conversations = try await swiftDataService.fetchConversations()
         print("loaded conversations")
     }
     
-    func create(_ conversation: ConversationSD) throws {
-        try swiftDataService.createConversation(conversation)
+    func deleteAllConversations() {
+        Task {
+            DispatchQueue.main.async { [self] in
+                messages = []
+            }
+            selectedConversation = nil
+            try? await swiftDataService.deleteConversations()
+            try? await loadConversations()
+        }
     }
     
-    func reloadConversation(_ conversation: ConversationSD) throws {
-        selectedConversation = try swiftDataService.getConversation(conversation.id)
-        messages = try swiftDataService.fetchMessages(conversation.id)
+    func deleteDailyConversations(_ date: Date) {
+        Task {
+            DispatchQueue.main.async { [self] in
+                messages = []
+            }
+            selectedConversation = nil
+            try? await swiftDataService.deleteConversations()
+            try? await loadConversations()
+        }
     }
     
-    func selectConversation(_ conversation: ConversationSD) throws {
-        try reloadConversation(conversation)
+    func create(_ conversation: ConversationSD) async throws {
+        try await swiftDataService.createConversation(conversation)
     }
     
-    func delete(_ conversation: ConversationSD) throws {
-        try swiftDataService.deleteConversation(conversation)
-        conversations = try swiftDataService.fetchConversations()
+    @MainActor func reloadConversation(_ conversation: ConversationSD) async throws {
+        let (messages, selectedConversation) = try await (
+            swiftDataService.fetchMessages(conversation.id),
+            swiftDataService.getConversation(conversation.id)
+        )
+        
+        withAnimation(.easeInOut(duration: 0.3)) {
+            self.messages = messages
+            self.selectedConversation = selectedConversation
+        }
     }
     
-//    @MainActor 
-    func stopGenerate() {
+    @MainActor func selectConversation(_ conversation: ConversationSD) async throws {
+        try await reloadConversation(conversation)
+    }
+    
+    func delete(_ conversation: ConversationSD) async throws {
+        selectedConversation = nil
+        try await swiftDataService.deleteConversation(conversation)
+        conversations = try await swiftDataService.fetchConversations()
+    }
+    
+    //    @MainActor
+    @MainActor func stopGenerate() {
         generation?.cancel()
         handleComplete()
         withAnimation {
@@ -60,30 +97,47 @@ final class ConversationStore {
     }
     
     @MainActor
-    func sendPrompt(userPrompt: String, model: LanguageModelSD, image: Image?) {
+    func sendPrompt(userPrompt: String, model: LanguageModelSD, image: Image? = nil, systemPrompt: String = "", trimmingMessageId: String? = nil) {
         guard userPrompt.trimmingCharacters(in: .whitespacesAndNewlines).count > 0 else { return }
         
         let conversation = selectedConversation ?? ConversationSD(name: userPrompt)
         conversation.updatedAt = Date.now
         conversation.model = model
         
-        let userMessage = MessageSD(content: userPrompt, role: "user", image: image?.render()?.compressImageData())
-        userMessage.conversation = conversation
-
-        var messageHistory = conversation.messages
-            .sorted{$0.createdAt < $1.createdAt}
-            .map{ChatMessage(role: $0.role, content: $0.content)
+        print("model", model.name)
+        print("conversation", conversation.name)
+        
+        /// trim conversation if on edit mode
+        if let trimmingMessageId = trimmingMessageId {
+            conversation.messages = conversation.messages
+                .sorted{$0.createdAt < $1.createdAt}
+                .prefix(while: {$0.id.uuidString != trimmingMessageId})
         }
         
+        /// add system prompt to very first message in the conversation
+        if !systemPrompt.isEmpty && conversation.messages.isEmpty {
+            let systemMessage = MessageSD(content: systemPrompt, role: "system")
+            systemMessage.conversation = conversation
+        }
+        
+        /// construct new message
+        let userMessage = MessageSD(content: userPrompt, role: "user", image: image?.render()?.compressImageData())
+        userMessage.conversation = conversation
+        
+        /// prepare message history for Ollama
+        var messageHistory = conversation.messages
+            .sorted{$0.createdAt < $1.createdAt}
+            .map{ChatMessage(role: $0.role, content: $0.content)}
+
+        print(messageHistory.map({$0.content}))
+        
         /// attach selected image to the last Message
-        if let lastMessage = messageHistory.popLast() {
-            var imagesBase64: [String] = []
-            if let image = image?.render() {
-                imagesBase64.append(image.convertImageToBase64String())
+        if let image = image?.render() {
+            if let lastMessage = messageHistory.popLast() {
+                let imagesBase64: [String] = [image.convertImageToBase64String()]
+                let messageWithImage = ChatMessage(role: lastMessage.role, content: lastMessage.content, images: imagesBase64)
+                messageHistory.append(messageWithImage)
             }
-            
-            let messageWithImage = ChatMessage(role: lastMessage.role, content: lastMessage.content, images: imagesBase64)
-            messageHistory.append(messageWithImage)
         }
         
         let assistantMessage = MessageSD(content: "", role: "assistant")
@@ -92,10 +146,10 @@ final class ConversationStore {
         conversationState = .loading
         
         Task {
-            try swiftDataService.updateConversation(conversation)
-            try swiftDataService.createMessage(userMessage)
-            try swiftDataService.createMessage(assistantMessage)
-            try reloadConversation(conversation)
+            try await swiftDataService.updateConversation(conversation)
+            try await swiftDataService.createMessage(userMessage)
+            try await swiftDataService.createMessage(assistantMessage)
+            try await reloadConversation(conversation)
             try? await loadConversations()
             
             if await OllamaService.shared.ollamaKit.reachable() {
@@ -106,7 +160,7 @@ final class ConversationStore {
                         case .finished:
                             self?.handleComplete()
                         case .failure(let error):
-                             self?.handleError(error.localizedDescription)
+                            self?.handleError(error.localizedDescription)
                         }
                     }, receiveValue: { [weak self] response in
                         self?.handleReceive(response)
@@ -117,38 +171,46 @@ final class ConversationStore {
         }
     }
     
-//    @MainActor
+    @MainActor
     private func handleReceive(_ response: OKChatResponse)  {
-        DispatchQueue.main.async { [self] in
-            if messages.isEmpty { return }
+        if messages.isEmpty { return }
+        
+        if let responseContent = response.message?.content {
+            currentMessageBuffer = currentMessageBuffer + responseContent
             
-            let lastIndex = messages.count - 1
-            let currentContent = messages[lastIndex].content
-
-            if let responseContent = response.message?.content {
-                messages[lastIndex].content = currentContent + responseContent
+            throttler.throttle { [weak self] in
+                guard let self = self else { return }
+                let lastIndex = self.messages.count - 1
+                self.messages[lastIndex].content.append(currentMessageBuffer)
+                currentMessageBuffer = ""
             }
-            conversationState = .loading
         }
     }
     
-//    @MainActor
+        @MainActor
     private func handleError(_ errorMessage: String) {
         guard let lastMesasge = messages.last else { return }
         lastMesasge.error = true
         lastMesasge.done = false
-        try? swiftDataService.updateMessage(lastMesasge)
+        
+        Task(priority: .background) {
+            try? await swiftDataService.updateMessage(lastMesasge)
+        }
+        
         withAnimation {
             conversationState = .error(message: errorMessage)
         }
     }
     
-//    @MainActor
+        @MainActor
     private func handleComplete() {
         guard let lastMesasge = messages.last else { return }
         lastMesasge.error = false
         lastMesasge.done = true
-        try? swiftDataService.updateMessage(lastMesasge)
+        
+        Task(priority: .background) {
+            try await self.swiftDataService.updateMessage(lastMesasge)
+        }
         
         withAnimation {
             conversationState = .completed

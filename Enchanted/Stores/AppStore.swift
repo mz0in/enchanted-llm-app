@@ -11,6 +11,8 @@ import SwiftUI
 
 @Observable
 final class AppStore {
+    static let shared = AppStore()
+    
     private var cancellables = Set<AnyCancellable>()
     private var timer: Timer?
     var isReachable: Bool = true
@@ -32,12 +34,6 @@ final class AppStore {
         }
     }
     
-    func checkReachability() {
-//        Task { [weak self] in
-//            
-//        }
-    }
-    
     private func updateReachable(_ isReachable: Bool) {
         withAnimation {
             self.isReachable = isReachable
@@ -50,6 +46,7 @@ final class AppStore {
     }
 
     private func reachable() async -> Bool {
-        return await OllamaService.shared.reachable()
+        let status = await OllamaService.shared.reachable()
+        return status
     }
 }
