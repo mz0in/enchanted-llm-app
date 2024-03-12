@@ -20,6 +20,7 @@ struct EmptyConversaitonView: View, KeyboardReadable {
 #else
     var columns = [GridItem(.flexible()), GridItem(.flexible())]
 #endif
+    @State var visibleItems = Set<Int>()
     
     var body: some View {
         VStack {
@@ -27,7 +28,7 @@ struct EmptyConversaitonView: View, KeyboardReadable {
             
             VStack(spacing: 25) {
                 Text("Enchanted")
-                    .font(Font.system(size: 46, weight: .bold))
+                    .font(Font.system(size: 46, weight: .thin))
                     .multilineTextAlignment(.center)
                     .foregroundStyle(
                         LinearGradient(
@@ -42,16 +43,16 @@ struct EmptyConversaitonView: View, KeyboardReadable {
                     .foregroundStyle(Color(.systemGray))
                 
                 LazyVGrid(columns: columns, alignment: .leading, spacing: 15) {
-                    ForEach(prompts.prefix(4), id: \.self) { prompt in
-                        Button(action: {sendPrompt(prompt.prompt)}) {
+                    ForEach(0..<prompts.prefix(4).count, id: \.self) { index in
+                        Button(action: {sendPrompt(prompts[index].prompt)}) {
                             VStack(alignment: .leading) {
-                                Text(prompt.prompt)
+                                Text(prompts[index].prompt)
                                     .font(.system(size: 15))
                                 Spacer()
                                 
                                 HStack {
                                     Spacer()
-                                    Image(systemName: prompt.type.icon)
+                                    Image(systemName: prompts[index].type.icon)
                                 }
                             }
                             .frame(maxWidth: .infinity)
@@ -60,9 +61,18 @@ struct EmptyConversaitonView: View, KeyboardReadable {
                             .clipShape(RoundedRectangle(cornerRadius: 10))
                             
                         }
+                        .opacity(visibleItems.contains(index) ? 1 : 0)
+                        .animation(.easeIn(duration: 0.3).delay(0.2 * Double(index)), value: visibleItems)
                         .transition(.slide)
                         .showIf(showPromptsAnimation)
                         .buttonStyle(.plain)
+                    }
+                }
+                .onAppear {
+                    for index in 0..<4 {
+                        DispatchQueue.main.async {
+                            visibleItems.insert(index)
+                        }
                     }
                 }
                 .frame(maxWidth: 700)
@@ -75,15 +85,19 @@ struct EmptyConversaitonView: View, KeyboardReadable {
             Spacer()
         }
         .onAppear {
-            withAnimation {
-                prompts = SamplePrompts.samples.shuffled()
-                showPromptsAnimation = true
+            DispatchQueue.main.async {
+                withAnimation {
+                    prompts = SamplePrompts.samples.shuffled()
+                    showPromptsAnimation = true
+                }
             }
         }
 #if os(iOS)
         .onReceive(keyboardPublisher) { newIsKeyboardVisible in
-            withAnimation {
-                isKeyboardVisible = newIsKeyboardVisible
+            DispatchQueue.main.async {
+                withAnimation {
+                    isKeyboardVisible = newIsKeyboardVisible
+                }
             }
         }
 #endif

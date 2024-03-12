@@ -8,11 +8,21 @@
 import SwiftUI
 
 struct SidebarView: View {
+    @Environment(\.openWindow) var openWindow
     var conversations: [ConversationSD]
     var onConversationTap: (_ conversation: ConversationSD) -> ()
     var onConversationDelete: (_ conversation: ConversationSD) -> ()
     var onDeleteDailyConversations: (_ date: Date) -> ()
     @State var showSettings = false
+    @State var showCompletions = false
+    @State var showKeyboardShortcutas = false
+    
+    private func onSettingsTap() {
+        Task {
+            showSettings.toggle()
+            await Haptics.shared.mediumTap()
+        }
+    }
     
     var body: some View {
         VStack {
@@ -26,31 +36,30 @@ struct SidebarView: View {
             }
             .scrollIndicators(.never)
             
-            Button(action: {
-                showSettings.toggle()
-                Haptics.shared.mediumTap()
-            }) {
-                HStack {
-                    Image(systemName: "gearshape.fill")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 18)
-                    
-                    Text("Settings")
-                        .font(.system(size: 16))
-                        .fontWeight(.medium)
-                    
-                    Spacer()
-                }
-                .foregroundColor(Color(.label))
-                .padding()
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-            }
+            Divider()
+            
+#if os(macOS)
+            SidebarButton(title: "Completions", image: "textformat.abc", onClick: {showCompletions.toggle()})
+            
+            SidebarButton(title: "Shortcuts", image: "keyboard.fill", onClick: {showKeyboardShortcutas.toggle()})
+#endif
+            
+            SidebarButton(title: "Settings", image: "gearshape.fill", onClick: onSettingsTap)
+            
         }
         .padding()
         .sheet(isPresented: $showSettings) {
             Settings()
         }
+#if os(macOS)
+        .sheet(isPresented: $showCompletions) {
+            CompletionsEditor()
+        }
+        .sheet(isPresented: $showKeyboardShortcutas) {
+            KeyboardShortcuts()
+        }
+#endif
+        
     }
 }
 

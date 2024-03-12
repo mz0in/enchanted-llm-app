@@ -8,8 +8,8 @@
 import SwiftUI
 
 struct Settings: View {
-    private var languageModelStore = LanguageModelStore.shared
-    private var conversationStore = ConversationStore.shared
+    var languageModelStore = LanguageModelStore.shared
+    var conversationStore = ConversationStore.shared
     
     @AppStorage("ollamaUri") private var ollamaUri: String = ""
     @AppStorage("systemPrompt") private var systemPrompt: String = ""
@@ -21,23 +21,23 @@ struct Settings: View {
     
     private func save() {
 #if os(iOS)
-        Haptics.shared.mediumTap()
 #endif
         // remove trailing slash
         if ollamaUri.last == "/" {
             ollamaUri = String(ollamaUri.dropLast())
         }
         
-        OllamaService.reinit(url: ollamaUri)
+        OllamaService.shared.initEndpoint(url: ollamaUri)
         Task {
-            presentationMode.wrappedValue.dismiss()
+            await Haptics.shared.mediumTap()
             try? await languageModelStore.loadModels()
         }
+        presentationMode.wrappedValue.dismiss()
     }
     
     private func checkServer() {
         Task {
-            OllamaService.reinit(url: ollamaUri)
+            OllamaService.shared.initEndpoint(url: ollamaUri)
             ollamaStatus = await OllamaService.shared.reachable()
             try? await languageModelStore.loadModels()
         }

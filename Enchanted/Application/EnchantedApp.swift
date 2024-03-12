@@ -17,12 +17,17 @@ struct EnchantedApp: App {
     var body: some Scene {
         WindowGroup {
             ApplicationEntry()
-                .task {
+                .task(priority: .background) {
 #if os(macOS)
                     HotkeyService.shared.register(callback: {panelManager.togglePanel()})
 #endif
                 }
         }
+#if os(macOS)
+        Window("Keyboard Shortcuts", id: "keyboard-shortcuts") {
+            KeyboardShortcuts()
+        }
+#endif
         
 #if os(macOS)
 #if false

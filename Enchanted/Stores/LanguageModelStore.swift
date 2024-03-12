@@ -13,11 +13,9 @@ final class LanguageModelStore {
     static let shared = LanguageModelStore(swiftDataService: SwiftDataService.shared)
     
     private var swiftDataService: SwiftDataService
-    var models: [LanguageModelSD] = []
-    var supportsImages = false
-    var selectedModel: LanguageModelSD?
-    
-    private var imageModelNames = ["llava"]
+    @MainActor var models: [LanguageModelSD] = []
+    @MainActor var supportsImages = false
+    @MainActor var selectedModel: LanguageModelSD?
     
     init(swiftDataService: SwiftDataService) {
         self.swiftDataService = swiftDataService
@@ -33,8 +31,6 @@ final class LanguageModelStore {
         } else {
             selectedModel = nil
         }
-        
-        checkModelFeatures()
     }
     
     @MainActor
@@ -47,26 +43,13 @@ final class LanguageModelStore {
         }
     }
     
-    func checkModelFeatures() {
-        for modelName in imageModelNames {
-            if let selectedModelName = selectedModel?.name {
-                if selectedModelName.contains(modelName) {
-                    supportsImages = true
-                    return
-                }
-            }
-        }
-        
-        supportsImages = false
-    }
-    
-    @MainActor
     func loadModels() async throws {
         print("loading models")
         let localModels = try await swiftDataService.fetchModels()
         print("completed loadLocal()")
         let remoteModels = try await OllamaService.shared.getModels()
         print("completed loadRemote()")
+        print(remoteModels)
         
         _ = localModels.map { model in
             model.isAvailable == remoteModels.contains(model)
@@ -76,12 +59,17 @@ final class LanguageModelStore {
         try await swiftDataService.saveModels(models: updateModelsList)
         print("completed saveModels()")
         
-        models = try await swiftDataService.fetchModels()
-        print("loaded models")
+        let fetchedModels = try await swiftDataService.fetchModels()
+        
+        DispatchQueue.main.async {
+            self.models = fetchedModels
+        }
     }
     
     func deleteAllModels() async throws {
-        models = []
+        DispatchQueue.main.async {
+            self.models = []
+        }
         try await swiftDataService.deleteModels()
     }
 }

@@ -8,23 +8,20 @@
 import Foundation
 import SwiftData
 
-actor SwiftDataService {
-    @MainActor
-    static let shared = SwiftDataService()
-    
+final actor SwiftDataService: ModelActor {
+    let modelContainer: ModelContainer
+    let modelExecutor: ModelExecutor
     private let modelContext: ModelContext
     
-    init(modelContext: ModelContext) {
-        self.modelContext = modelContext
-    }
-
-    @MainActor
+    static let shared = SwiftDataService()
+    
     init() {
         let sharedModelContainer: ModelContainer = {
             let schema = Schema([
                 LanguageModelSD.self,
                 ConversationSD.self,
                 MessageSD.self,
+                CompletionInstructionSD.self
             ])
             let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
             
@@ -34,7 +31,11 @@ actor SwiftDataService {
                 fatalError("Could not create ModelContainer: \(error)")
             }
         }()
-        self.modelContext = sharedModelContainer.mainContext
+        
+        self.modelContext = ModelContext(sharedModelContainer)
+        self.modelContext.autosaveEnabled = false
+        modelContainer = sharedModelContainer
+        modelExecutor = DefaultSerialModelExecutor(modelContext: modelContext)
     }
 }
 
@@ -127,12 +128,35 @@ extension SwiftDataService {
     }
 }
 
+// MARK: - CompletionInstruction
+extension SwiftDataService {
+    func fetchCompletionInstructions() throws -> [CompletionInstructionSD] {
+        let sortDescriptor = SortDescriptor(\CompletionInstructionSD.order, order: .forward)
+        let fetchDescriptor = FetchDescriptor<CompletionInstructionSD>(sortBy: [sortDescriptor])
+        return try modelContext.fetch(fetchDescriptor)
+    }
+    
+    func updateCompletionInstructions(_ instructions: [CompletionInstructionSD]) throws {
+        for index in instructions.indices {
+            instructions[index].order = index
+            modelContext.insert(instructions[index])
+        }
+        try modelContext.saveChanges()
+    }
+    
+    func deleteCompletionInstruction(_ instruction: CompletionInstructionSD) throws {
+        self.modelContext.delete(instruction)
+        try modelContext.saveChanges()
+    }
+}
+
 // MARK: - General
 extension SwiftDataService {
     func deleteEverything() throws {
         try modelContext.delete(model: ConversationSD.self)
         try modelContext.delete(model: LanguageModelSD.self)
         try modelContext.delete(model: MessageSD.self)
+        try modelContext.delete(model: CompletionInstructionSD.self)
         try modelContext.saveChanges()
     }
 }
